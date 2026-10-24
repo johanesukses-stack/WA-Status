@@ -148,6 +148,7 @@ input[type=number],select{font:inherit;padding:10px 12px;border-radius:10px;bord
   </section>
 </main>
 
+<script src="fast.js"></script>
 <script>
 (() => {
 const $ = id => document.getElementById(id);
@@ -165,7 +166,8 @@ const MIMES = [
 const pickMime = () => (window.MediaRecorder && MediaRecorder.isTypeSupported)
   ? (MIMES.find(m => MediaRecorder.isTypeSupported(m)) || '') : '';
 
-if (!window.MediaRecorder || !(video.captureStream || video.mozCaptureStream)) {
+const fastOK = () => !!(window.FastCut && window.FastCut.supported());
+if (!fastOK() && (!window.MediaRecorder || !(video.captureStream || video.mozCaptureStream))) {
   $('unsupported').hidden = false;
 }
 
@@ -233,7 +235,7 @@ function rebuildPlan(){
     tl.appendChild(d);
   });
   $('plan').textContent = n + ' potongan · ' + fmtT(duration) + ' total';
-  $('eta').textContent = 'Proses ± ' + fmtT(duration);
+  $('eta').textContent = fastOK() ? 'Mode cepat' : 'Proses ± ' + fmtT(duration);
   document.querySelectorAll('#presets button').forEach(b =>
     b.setAttribute('aria-pressed', String(Number(b.dataset.s) === L)));
 }
@@ -290,39 +292,91 @@ async function recordSegment(p, mime, bps, onProgress){
   return new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
 }
 
+function baseName(){
+  return (file.name.replace(/\.[^.]+$/, '') || 'video').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 40) || 'video';
+}
+const outName = (base, i, ext) => base + '_' + pad(i + 1) + '-dari-' + pad(plan.length) + '.' + ext;
+
+/* Mode cepat: baca -> decode -> encode ulang -> MP4 siap WhatsApp (tanpa diputar) */
+async function runFast(base, bps, cells){
+  $('keepOn').hidden = true;
+  const t0 = performance.now();
+  await window.FastCut.cutFast(file, plan, {
+    bitrate: bps,
+    shouldCancel: () => cancelled,
+    onProgress: f => {
+      const pos = f * duration;
+      cells.forEach((c, i) => {
+        if (c.classList.contains('done')) return;
+        const p = plan[i];
+        const fr = Math.max(0, Math.min(1, (pos - p.start) / (p.end - p.start)));
+        c.querySelector('i').style.width = (fr * 100) + '%';
+        c.classList.toggle('active', fr > 0 && fr < 1);
+      });
+      const sec = (performance.now() - t0) / 1000;
+      const speed = sec > 0.5 ? pos / sec : 0;
+      setStatus('Mode cepat: ' + Math.round(f * 100) + '%' + (speed ? ' · ' + speed.toFixed(1) + 'x lebih cepat dari durasi video' : ''));
+    },
+    onSegment: ({ index, blob }) => {
+      cells[index].classList.remove('active'); cells[index].classList.add('done');
+      addResult({ name: outName(base, index, 'mp4'), blob, url: URL.createObjectURL(blob), dur: plan[index].end - plan[index].start });
+    }
+  });
+  const total = (performance.now() - t0) / 1000;
+  setStatus('Selesai dalam ' + fmtT(total) + '. ' + outputs.length + ' potongan MP4 siap diunggah ke status.');
+}
+
+/* Mode biasa (cadangan): diputar dan direkam, lama = durasi video */
+async function runRealtime(base, bps, cells){
+  $('keepOn').hidden = false;
+  const mime = pickMime();
+  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  await ensureAudio();
+  for (let i = 0; i < plan.length; i++) {
+    if (cancelled) break;
+    cells.forEach(c => c.classList.remove('active'));
+    cells[i].classList.add('active');
+    setStatus('Mode biasa: memproses potongan ' + (i + 1) + ' dari ' + plan.length + '…');
+    const bar = cells[i].querySelector('i');
+    const blob = await recordSegment(plan[i], mime, bps, f => { bar.style.width = (f * 100) + '%'; });
+    if (cancelled) break;
+    cells[i].classList.remove('active'); cells[i].classList.add('done');
+    addResult({ name: outName(base, i, ext), blob, url: URL.createObjectURL(blob), dur: plan[i].end - plan[i].start });
+  }
+  if (!cancelled) {
+    setStatus('Selesai (mode biasa). ' + outputs.length + ' potongan siap.' +
+      (ext === 'webm' ? ' Hasilnya WebM, WhatsApp bisa menolak.' : ' Jika WhatsApp menolak, gunakan Chrome terbaru yang mendukung mode cepat.'));
+  }
+}
+
 $('start').onclick = async () => {
   if (running || !plan.length) return;
   running = true; cancelled = false;
   clearResults();
-  $('start').disabled = true; $('cancel').hidden = false; $('keepOn').hidden = false;
-  $('file').disabled = true;
-  video.controls = false;
+  $('start').disabled = true; $('cancel').hidden = false;
+  $('file').disabled = true; video.controls = false;
   try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
-  const mime = pickMime();
   const bps = Number($('quality').value);
-  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-  const base = (file.name.replace(/\.[^.]+$/, '') || 'video').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 40) || 'video';
+  const base = baseName();
   const cells = [...$('timeline').children];
   try {
-    await ensureAudio();
-    for (let i = 0; i < plan.length; i++) {
-      if (cancelled) break;
-      cells.forEach(c => c.classList.remove('active'));
-      cells[i].classList.add('active');
-      setStatus('Memproses potongan ' + (i + 1) + ' dari ' + plan.length + '…');
-      const bar = cells[i].querySelector('i');
-      const blob = await recordSegment(plan[i], mime, bps, f => { bar.style.width = (f * 100) + '%'; });
-      if (cancelled) break;
-      cells[i].classList.remove('active'); cells[i].classList.add('done');
-      const name = base + '_' + pad(i + 1) + '-dari-' + pad(plan.length) + '.' + ext;
-      addResult({ name, blob, url: URL.createObjectURL(blob), dur: plan[i].end - plan[i].start });
+    let done = false;
+    if (fastOK()) {
+      try {
+        await runFast(base, bps, cells);
+        done = true;
+      } catch (err) {
+        if (cancelled || (err && err.code === 'CANCELLED')) throw err;
+        console.warn('Mode cepat gagal:', err);
+        clearResults();
+        setStatus('Mode cepat tidak bisa dipakai untuk video ini. Beralih ke mode biasa…');
+      }
     }
-    setStatus(cancelled ? 'Dibatalkan.' : 'Selesai. ' + outputs.length + ' potongan siap diunggah.');
-    if (!cancelled && ext === 'webm') {
-      setStatus('Selesai, tapi browser menghasilkan WebM. Jika WhatsApp menolak, pakai Chrome terbaru agar hasilnya MP4.');
-    }
+    if (!done) await runRealtime(base, bps, cells);
+    if (cancelled) setStatus('Dibatalkan.');
   } catch (err) {
-    setStatus('Gagal: ' + (err && err.message ? err.message : err));
+    if (err && err.code === 'CANCELLED') setStatus('Dibatalkan.');
+    else setStatus('Gagal: ' + (err && err.message ? err.message : err));
   } finally {
     running = false; $('start').disabled = false; $('cancel').hidden = true; $('keepOn').hidden = true;
     $('file').disabled = false; video.controls = true;
