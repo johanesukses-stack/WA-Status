@@ -1,0 +1,17 @@
+{
+  "name": "Potong Status",
+  "short_name": "Potong Status",
+  "description": "Potong video jadi bagian sama rata untuk status WhatsApp, offline.",
+  "lang": "id",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf1ee",
+  "theme_color": "#12805c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

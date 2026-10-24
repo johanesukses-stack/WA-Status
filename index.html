@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12805c">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Potong Status</title>
+<style>
+:root{
+  --bg:#edf1ee; --surface:#ffffff; --ink:#12251d; --muted:#5a6a62; --line:#d3dcd7;
+  --accent:#12805c; --accent-ink:#ffffff; --pending:#cdd8d2; --active:#e8a817; --danger:#b3261e;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0f1713; --surface:#18221d; --ink:#e7f0eb; --muted:#93a59b; --line:#2b3a32;
+    --accent:#3fbf8f; --accent-ink:#06130d; --pending:#2b3a32; --active:#f0b73a; --danger:#ff8a80;}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+}
+main{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:1.5rem;line-height:1.2;margin:8px 0 0;letter-spacing:-.01em}
+.sub{margin:0;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+button,.btn{
+  font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;cursor:pointer;
+  background:var(--accent);color:var(--accent-ink);min-height:48px;
+}
+button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible,label:focus-within{outline:3px solid var(--active);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1 1 auto}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.pick{display:block;text-align:center;cursor:pointer;border:2px dashed var(--line);border-radius:12px;padding:22px 12px;color:var(--muted)}
+.pick strong{display:block;color:var(--ink);font-size:1.05rem}
+video{width:100%;max-height:260px;background:#000;border-radius:10px;display:block}
+.field{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.field>span{font-weight:600}
+.seg-btns{display:flex;gap:8px}
+.seg-btns button{flex:1;padding:10px 0;min-height:44px}
+.seg-btns button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+input[type=number],select{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-height:44px;width:100%}
+.check{display:flex;gap:10px;align-items:flex-start;margin-top:14px}
+.check input{width:22px;height:22px;margin:2px 0 0;accent-color:var(--accent)}
+.hint{color:var(--muted);font-size:.9rem;margin:4px 0 0}
+/* garis waktu potongan: elemen utama aplikasi */
+.timeline{display:flex;gap:3px;height:44px;margin:12px 0 6px}
+.timeline div{
+  flex:1 1 0;border-radius:6px;background:var(--pending);display:grid;place-items:center;
+  font-size:.8rem;font-weight:700;color:var(--ink);position:relative;overflow:hidden;min-width:0;
+}
+.timeline div i{position:absolute;inset:0 auto 0 0;width:0;background:var(--accent);opacity:.9}
+.timeline div b{position:relative;font-weight:700}
+.timeline div.active{outline:2px solid var(--active)}
+.timeline div.done{background:var(--accent);color:var(--accent-ink)}
+.timeline div.done i{display:none}
+.stat{display:flex;justify-content:space-between;color:var(--muted);font-size:.9rem}
+.result{display:flex;flex-direction:column;gap:10px}
+.item{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.item video{max-height:180px}
+.item .meta{display:flex;justify-content:space-between;gap:8px;font-size:.92rem}
+.item .meta span:first-child{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.warn{border-left:4px solid var(--active);padding:10px 12px;background:var(--surface);border-radius:8px;font-size:.92rem}
+.error{border-left-color:var(--danger)}
+[hidden]{display:none!important}
+.status{min-height:1.4em}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Potong Status</h1>
+    <p class="sub">Bagi video panjang jadi potongan sama rata untuk status WhatsApp. Semua diproses di HP, tanpa internet.</p>
+  </header>
+
+  <div id="unsupported" class="warn error" hidden>
+    Browser ini belum mendukung pemotongan video. Buka di Chrome terbaru di Android.
+  </div>
+  <button id="install" class="alt" hidden>Pasang aplikasi di HP</button>
+
+  <section class="card">
+    <label class="pick" for="file">
+      <strong id="pickTitle">Pilih video</strong>
+      <span id="pickSub">Ketuk untuk memilih dari galeri</span>
+    </label>
+    <input id="file" type="file" accept="video/*">
+    <div id="previewWrap" hidden style="margin-top:12px">
+      <video id="v" playsinline controls preload="auto"></video>
+    </div>
+  </section>
+
+  <section class="card" id="settings" hidden>
+    <div class="field" style="margin-top:0">
+      <span>Panjang tiap potongan (detik)</span>
+      <div class="seg-btns" id="presets">
+        <button type="button" class="alt" data-s="15" aria-pressed="false">15</button>
+        <button type="button" class="alt" data-s="30" aria-pressed="true">30</button>
+        <button type="button" class="alt" data-s="60" aria-pressed="false">60</button>
+      </div>
+      <input id="len" type="number" inputmode="numeric" min="3" max="180" value="30" aria-label="Panjang potongan dalam detik">
+      <p class="hint">Batas durasi status WhatsApp bisa berubah. Sesuaikan dengan versi WhatsApp kamu.</p>
+    </div>
+
+    <label class="check">
+      <input id="even" type="checkbox" checked>
+      <span><strong>Bagi rata</strong><span class="hint" style="display:block">Semua potongan berdurasi hampir sama, tidak ada sisa pendek di akhir.</span></span>
+    </label>
+
+    <div class="field">
+      <span>Kualitas</span>
+      <select id="quality">
+        <option value="2000000">Hemat (file kecil)</option>
+        <option value="4000000" selected>Standar</option>
+        <option value="8000000">Tinggi (file besar)</option>
+      </select>
+    </div>
+
+    <div class="timeline" id="timeline" aria-label="Rencana potongan"></div>
+    <div class="stat"><span id="plan"></span><span id="eta"></span></div>
+  </section>
+
+  <section class="card" id="runCard" hidden>
+    <div class="row">
+      <button id="start">Mulai potong</button>
+      <button id="cancel" class="danger" hidden>Batalkan</button>
+    </div>
+    <p class="hint status" id="status" role="status" aria-live="polite"></p>
+    <div class="warn" id="keepOn" hidden>Biarkan layar menyala dan jangan pindah aplikasi sampai selesai. Video diputar dan direkam di latar, jadi lama proses sama dengan durasi video.</div>
+  </section>
+
+  <section class="card" id="results" hidden>
+    <strong>Hasil potongan</strong>
+    <p class="hint">Unggah ke status sesuai urutan nomor.</p>
+    <div class="row" style="margin:10px 0">
+      <button id="shareAll">Bagikan semua ke WhatsApp</button>
+      <button id="saveAll" class="alt">Simpan semua</button>
+    </div>
+    <div class="result" id="list"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const video = $('v');
+let file = null, objUrl = null, duration = 0;
+let plan = [];            // [{start,end}]
+let cancelled = false, running = false;
+let outputs = [];         // [{name, blob, url}]
+let actx = null, adest = null, asrc = null, wakeLock = null;
+
+const MIMES = [
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4',
+  'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
+];
+const pickMime = () => (window.MediaRecorder && MediaRecorder.isTypeSupported)
+  ? (MIMES.find(m => MediaRecorder.isTypeSupported(m)) || '') : '';
+
+if (!window.MediaRecorder || !(video.captureStream || video.mozCaptureStream)) {
+  $('unsupported').hidden = false;
+}
+
+/* ---------- pasang & offline ---------- */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e; $('install').hidden = false;
+});
+$('install').onclick = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt(); await deferredPrompt.userChoice;
+  deferredPrompt = null; $('install').hidden = true;
+};
+window.addEventListener('appinstalled', () => { $('install').hidden = true; });
+
+/* ---------- util ---------- */
+const fmtT = s => { s = Math.round(s); const m = Math.floor(s/60); return m + ':' + String(s%60).padStart(2,'0'); };
+const fmtMB = b => (b/1048576).toFixed(1) + ' MB';
+const pad = n => String(n).padStart(2,'0');
+
+/* ---------- pilih file ---------- */
+$('file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  clearResults();
+  file = f;
+  if (objUrl) URL.revokeObjectURL(objUrl);
+  objUrl = URL.createObjectURL(f);
+  video.src = objUrl;
+  $('pickTitle').textContent = f.name;
+  $('pickSub').textContent = fmtMB(f.size) + ' · ketuk untuk ganti';
+  $('previewWrap').hidden = false;
+});
+video.addEventListener('loadedmetadata', () => {
+  duration = video.duration;
+  if (!isFinite(duration) || duration <= 0) { setStatus('Durasi video tidak terbaca. Coba video lain.'); return; }
+  $('settings').hidden = false; $('runCard').hidden = false;
+  rebuildPlan();
+});
+video.addEventListener('error', () => {
+  if (file) setStatus('Video ini tidak bisa dibuka di browser. Coba format MP4 (H.264).');
+});
+
+/* ---------- rencana potongan ---------- */
+function getLen(){ return Math.max(3, Math.min(180, Number($('len').value) || 30)); }
+function rebuildPlan(){
+  if (!duration) return;
+  const L = getLen();
+  const n = Math.max(1, Math.ceil(duration / L - 1e-6));
+  const even = $('even').checked;
+  const size = even ? duration / n : L;
+  plan = [];
+  for (let i = 0; i < n; i++) {
+    const s = i * size, e = Math.min(duration, (i + 1) * size);
+    plan.push({ start: i === 0 ? 0 : s, end: i === n - 1 ? duration : e });
+  }
+  const tl = $('timeline'); tl.innerHTML = '';
+  plan.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.style.flexGrow = Math.max(0.2, p.end - p.start);
+    d.innerHTML = '<i></i><b>' + (i + 1) + '</b>';
+    tl.appendChild(d);
+  });
+  $('plan').textContent = n + ' potongan · ' + fmtT(duration) + ' total';
+  $('eta').textContent = 'Proses ± ' + fmtT(duration);
+  document.querySelectorAll('#presets button').forEach(b =>
+    b.setAttribute('aria-pressed', String(Number(b.dataset.s) === L)));
+}
+document.querySelectorAll('#presets button').forEach(b => b.onclick = () => { $('len').value = b.dataset.s; rebuildPlan(); });
+$('len').addEventListener('input', rebuildPlan);
+$('even').addEventListener('change', rebuildPlan);
+
+/* ---------- perekaman ---------- */
+function setStatus(t){ $('status').textContent = t; }
+
+function seekTo(t){
+  return new Promise(res => {
+    if (Math.abs(video.currentTime - t) < 0.001) return res();
+    const done = () => { video.removeEventListener('seeked', done); setTimeout(res, 120); };
+    video.addEventListener('seeked', done);
+    video.currentTime = t;
+  });
+}
+
+function ensureAudio(){
+  if (!actx) {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    adest = actx.createMediaStreamDestination();
+    asrc = actx.createMediaElementSource(video);   // hanya ke perekam, tidak ke speaker
+    asrc.connect(adest);
+  }
+  if (actx.state === 'suspended') return actx.resume();
+}
+
+async function recordSegment(p, mime, bps, onProgress){
+  await seekTo(p.start);
+  const cap = (video.captureStream || video.mozCaptureStream).call(video);
+  const vt = cap.getVideoTracks();
+  if (!vt.length) throw new Error('Video tidak bisa ditangkap oleh browser ini.');
+  const stream = new MediaStream([...vt, ...adest.stream.getAudioTracks()]);
+  const opts = { videoBitsPerSecond: bps, audioBitsPerSecond: 128000 };
+  if (mime) opts.mimeType = mime;
+  const rec = new MediaRecorder(stream, opts);
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(r => rec.onstop = r);
+  rec.start(500);
+  await video.play();
+  await new Promise(res => {
+    const iv = setInterval(() => {
+      onProgress(Math.min(1, (video.currentTime - p.start) / (p.end - p.start)));
+      if (cancelled || video.ended || video.currentTime >= p.end - 0.01) { clearInterval(iv); res(); }
+    }, 20);
+  });
+  video.pause();
+  if (rec.state !== 'inactive') rec.stop();
+  await stopped;
+  vt.forEach(t => t.stop());
+  return new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
+}
+
+$('start').onclick = async () => {
+  if (running || !plan.length) return;
+  running = true; cancelled = false;
+  clearResults();
+  $('start').disabled = true; $('cancel').hidden = false; $('keepOn').hidden = false;
+  $('file').disabled = true;
+  video.controls = false;
+  try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  const mime = pickMime();
+  const bps = Number($('quality').value);
+  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  const base = (file.name.replace(/\.[^.]+$/, '') || 'video').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 40) || 'video';
+  const cells = [...$('timeline').children];
+  try {
+    await ensureAudio();
+    for (let i = 0; i < plan.length; i++) {
+      if (cancelled) break;
+      cells.forEach(c => c.classList.remove('active'));
+      cells[i].classList.add('active');
+      setStatus('Memproses potongan ' + (i + 1) + ' dari ' + plan.length + '…');
+      const bar = cells[i].querySelector('i');
+      const blob = await recordSegment(plan[i], mime, bps, f => { bar.style.width = (f * 100) + '%'; });
+      if (cancelled) break;
+      cells[i].classList.remove('active'); cells[i].classList.add('done');
+      const name = base + '_' + pad(i + 1) + '-dari-' + pad(plan.length) + '.' + ext;
+      addResult({ name, blob, url: URL.createObjectURL(blob), dur: plan[i].end - plan[i].start });
+    }
+    setStatus(cancelled ? 'Dibatalkan.' : 'Selesai. ' + outputs.length + ' potongan siap diunggah.');
+    if (!cancelled && ext === 'webm') {
+      setStatus('Selesai, tapi browser menghasilkan WebM. Jika WhatsApp menolak, pakai Chrome terbaru agar hasilnya MP4.');
+    }
+  } catch (err) {
+    setStatus('Gagal: ' + (err && err.message ? err.message : err));
+  } finally {
+    running = false; $('start').disabled = false; $('cancel').hidden = true; $('keepOn').hidden = true;
+    $('file').disabled = false; video.controls = true;
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+};
+$('cancel').onclick = () => { cancelled = true; setStatus('Membatalkan…'); };
+
+/* ---------- hasil ---------- */
+function addResult(o){
+  outputs.push(o);
+  $('results').hidden = false;
+  const el = document.createElement('div'); el.className = 'item';
+  const v = document.createElement('video'); v.src = o.url; v.controls = true; v.playsInline = true; v.preload = 'metadata';
+  const meta = document.createElement('div'); meta.className = 'meta';
+  meta.innerHTML = '<span></span><span></span>';
+  meta.children[0].textContent = o.name;
+  meta.children[1].textContent = fmtT(o.dur) + ' · ' + fmtMB(o.blob.size);
+  const row = document.createElement('div'); row.className = 'row';
+  const a = document.createElement('a'); a.href = o.url; a.download = o.name; a.className = 'btn alt';
+  a.style.cssText = 'text-align:center;text-decoration:none;display:grid;place-items:center;border:1px solid var(--line);background:transparent;color:var(--ink)';
+  a.textContent = 'Simpan';
+  row.appendChild(a);
+  el.append(v, meta, row);
+  $('list').appendChild(el);
+}
+function clearResults(){
+  outputs.forEach(o => URL.revokeObjectURL(o.url));
+  outputs = []; $('list').innerHTML = ''; $('results').hidden = true; setStatus('');
+  [...$('timeline').children].forEach(c => { c.classList.remove('done','active'); const i = c.querySelector('i'); if (i) i.style.width = '0'; });
+}
+$('shareAll').onclick = async () => {
+  const files = outputs.map(o => new File([o.blob], o.name, { type: o.blob.type }));
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try { await navigator.share({ files }); } catch (e) {}
+  } else {
+    setStatus('Fitur bagikan tidak tersedia. Tekan Simpan, lalu pilih dari galeri di WhatsApp.');
+  }
+};
+$('saveAll').onclick = () => {
+  outputs.forEach((o, i) => setTimeout(() => {
+    const a = document.createElement('a'); a.href = o.url; a.download = o.name; document.body.appendChild(a); a.click(); a.remove();
+  }, i * 400));
+};
+})();
+</script>
+</body>
+</html>
